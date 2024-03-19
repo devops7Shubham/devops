@@ -7,6 +7,8 @@ import org.springframework.web.bind.annotation.RestController;
 
 @SpringBootApplication
 @RestController
+//adding underneath code so that timestamp error is avoided when docker image is built and ran
+@RequestMapping("/api")
 public class DevopsIntegrationApplication {
 
 	@GetMapping
