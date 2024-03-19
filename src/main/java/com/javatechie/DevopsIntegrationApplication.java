@@ -10,12 +10,12 @@ import org.springframework.web.bind.annotation.RestController;
 @SpringBootApplication
 @RestController
 //adding underneath code so that timestamp error is avoided when docker image is built and ran
-@RequestMapping("/api")
+@RequestMapping("/")
 public class DevopsIntegrationApplication {
 
 	@GetMapping
 	public String message(){
-		return "welcome to Young Minds";
+		return "welcome to Hogwarts";
 	}
 
 	public static void main(String[] args) {
