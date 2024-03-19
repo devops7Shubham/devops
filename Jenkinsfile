@@ -8,5 +8,10 @@ pipeline{
                 userRemoteConfigs: [[url: 'https://github.com/devops7Shubham/devops.git']])
             }
         }
+        stage("Build"){
+            steps{
+                sh 'mvn package'
+            }
+        }
     }
 }
