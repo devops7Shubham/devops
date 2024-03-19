@@ -13,5 +13,10 @@ pipeline{
                 sh 'mvn clean install'
             }
         }
+        stage("Docker build"){
+            steps{
+                sh 'docker buildx build -t java_hello_world .'
+            }
+        }
     }
 }
