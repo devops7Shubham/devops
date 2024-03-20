@@ -8,14 +8,23 @@ pipeline{
                 userRemoteConfigs: [[url: 'https://github.com/devops7Shubham/devops.git']])
             }
         }
-        stage("Build"){
+        stage("Maven Build"){
             steps{
                 sh 'mvn clean install'
             }
         }
         stage("Docker build"){
             steps{
-                sh 'docker buildx build -t java_hello_world .'
+                sh 'docker buildx build -t shubhamdevops/java_hello_world .'
+            }
+        }
+        stage("Docker Push"){
+            steps{
+                withCredentials([usernamePassword(credentialsId: 'shubhamdevops', passwordVariable: 'docker_password', usernameVariable: 'docker_username')]){
+                    sh "docker login -u ${docker_username} -p ${docker_password}"
+                    sh 'docker push shubhamdevops/java_hello_world'
+                }
+
             }
         }
     }
