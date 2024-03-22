@@ -29,13 +29,11 @@ pipeline{
         }
         stage("Kubernetes Configuration"){
             steps{
-                withCredentials([[$class: 'AmazonWebServicesCredentialsBinding', 
-                credentialsId: 'aws_credentials', 
-                accessKeyVariable: 'AWS_ACCESS_KEY_ID', 
-                secretKeyVariable: 'AWS_SECRET_ACCESS_KEY']]) {
-                sh "aws eks update-kubeconfig --region ap-south-1 --name example"
+                withCredentials([[$class: 'AmazonWebServicesCredentialsBinding',credentialsId: 'aws_credentials',accessKeyVariable: 'AWS_ACCESS_KEY_ID',secretKeyVariable: 'AWS_SECRET_ACCESS_KEY']]) {
+                    sh "aws eks update-kubeconfig --region ap-south-1 --name example"
+                    }
+                }
             }
-        }
         stage("Kubernetes Deployment"){
             steps{
                 sh "kubectl apply -f Deployment.yaml"
