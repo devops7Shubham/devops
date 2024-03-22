@@ -27,5 +27,15 @@ pipeline{
 
             }
         }
+        stage("Kubernetes Configuration"){
+            steps{
+                sh "aws eks update-kubeconfig --region ap-south-1 --name example"
+            }
+        }
+        stage("Kubernetes Deployment"){
+            steps{
+                sh "kubectl apply -f Deployment.yaml"
+            }
+        }
     }
 }
