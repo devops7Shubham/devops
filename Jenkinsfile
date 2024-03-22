@@ -37,7 +37,7 @@ pipeline{
         stage("Kubernetes Deployment"){
             steps{
                 withCredentials([[$class: 'AmazonWebServicesCredentialsBinding',credentialsId: 'aws_credentials',accessKeyVariable: 'AWS_ACCESS_KEY_ID',secretKeyVariable: 'AWS_SECRET_ACCESS_KEY']]) {
-                    sh "/root/bin/kubectl apply -f Deployment.yaml --validate=false"
+                    sh "/usr/local/bin/kubectl apply -f Deployment.yaml --validate=false"
                     }
                 }
             }
