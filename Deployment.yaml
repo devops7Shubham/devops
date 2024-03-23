@@ -17,18 +17,18 @@ spec:
         image: shubhamdevops/java_hello_world:latest
         ports:
         - containerPort: 8000
+
 ---
+
 apiVersion: v1
-kind: Service 
+kind: Service
 metadata:
   name: my-app
 spec:
   selector:
-    matchLabels:
-      app: my-app
+    app: my-app
   ports:
-    - protocol: "TCP"
+    - protocol: TCP
       port: 8000
       targetPort: 8000
   type: LoadBalancer
-
