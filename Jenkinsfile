@@ -63,17 +63,29 @@ pipeline {
 
     stage('Verify EKS Nodes') {
       steps {
-        sh "kubectl get nodes -o wide"
+        withCredentials([[$class: 'AmazonWebServicesCredentialsBinding',
+          credentialsId: 'aws_credentials',
+          accessKeyVariable: 'AWS_ACCESS_KEY_ID',
+          secretKeyVariable: 'AWS_SECRET_ACCESS_KEY'
+        ]]) {
+          sh "kubectl get nodes -o wide"
+        }
       }
     }
 
     stage('Kubernetes Deployment') {
       steps {
-        sh '''
-          kubectl apply -f k8s/backend-deployment.yaml --validate=false
-          kubectl apply -f k8s/frontend-deployment.yaml --validate=false
-          kubectl apply -f k8s/postgres-deployment.yaml --validate=false
-        '''
+        withCredentials([[$class: 'AmazonWebServicesCredentialsBinding',
+          credentialsId: 'aws_credentials',
+          accessKeyVariable: 'AWS_ACCESS_KEY_ID',
+          secretKeyVariable: 'AWS_SECRET_ACCESS_KEY'
+        ]]) {
+          sh '''
+            kubectl apply -f k8s/backend-deployment.yaml --validate=false
+            kubectl apply -f k8s/frontend-deployment.yaml --validate=false
+            kubectl apply -f k8s/postgres-deployment.yaml --validate=false
+          '''
+        }
       }
     }
   }
