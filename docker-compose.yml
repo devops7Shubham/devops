@@ -7,7 +7,7 @@ services:
     ports:
       - "8080:8080"
     env_file:
-      - ./backend/.env
+      - ./backend/.env  # Ensure this .env file is correctly set up with DB credentials
     depends_on:
       postgres:
         condition: service_healthy
@@ -24,7 +24,7 @@ services:
     ports:
       - "3000:3000"
     environment:
-      - REACT_APP_BACKEND_URL=http://backend:8080
+      - REACT_APP_BACKEND_URL=http://backend:8080  # Backend URL in frontend environment
     depends_on:
       backend:
         condition: service_started

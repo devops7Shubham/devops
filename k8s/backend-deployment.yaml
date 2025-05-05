@@ -1,7 +1,7 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: backend-deployment
+  name: backend
   labels:
     app: backend
 spec:
@@ -15,11 +15,11 @@ spec:
         app: backend
     spec:
       containers:
-      - name: backend-container
+      - name: backend
         image: shubhamdevops/backend-app:latest
         env:
         - name: DB_HOST
-          value: postgres
+          value: postgres           # from .env
         - name: DB_PORT
           value: "5432"
         - name: DB_USER
@@ -29,7 +29,7 @@ spec:
         - name: DB_NAME
           value: employees
         - name: ALLOWED_ORIGINS
-          value: "*"
+          value: "http://localhost:3000"
         ports:
         - containerPort: 8080
 ---
@@ -38,10 +38,9 @@ kind: Service
 metadata:
   name: backend-svc
 spec:
-  type: NodePort              # expose on node port
+  type: ClusterIP
   selector:
     app: backend
   ports:
-    - port: 8080              # ClusterIP port
-      targetPort: 8080        # Pod port
-      nodePort: 30080         # NodePort range 30000–32767
+    - port: 8080
+      targetPort: 8080

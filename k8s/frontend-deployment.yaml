@@ -1,7 +1,7 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: frontend-deployment
+  name: frontend
   labels:
     app: frontend
 spec:
@@ -15,13 +15,13 @@ spec:
         app: frontend
     spec:
       containers:
-        - name: frontend-container
-          image: shubhamdevops/frontend-app:latest
-          env:
-            - name: REACT_APP_BACKEND_URL
-              value: http://backend-svc:8080
-          ports:
-            - containerPort: 3000
+      - name: frontend
+        image: shubhamdevops/frontend-app:latest
+        env:
+        - name: REACT_APP_BACKEND_URL
+          value: http://backend-svc:8080
+        ports:
+        - containerPort: 3000
 ---
 apiVersion: v1
 kind: Service
@@ -32,5 +32,5 @@ spec:
   selector:
     app: frontend
   ports:
-    - port: 80           # External load balancer port
-      targetPort: 3000   # Container port
+    - port: 80           # external HTTP port
+      targetPort: 3000   # your React app port
