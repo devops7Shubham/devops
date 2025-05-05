@@ -88,6 +88,21 @@ pipeline {
         }
       }
     }
+
+    stage('Get Frontend Service IP') {
+      steps {
+        withCredentials([[$class: 'AmazonWebServicesCredentialsBinding',
+          credentialsId: 'aws_credentials',
+          accessKeyVariable: 'AWS_ACCESS_KEY_ID',
+          secretKeyVariable: 'AWS_SECRET_ACCESS_KEY'
+        ]]) {
+          script {
+            def externalIP = sh(script: "kubectl get svc frontend-svc -o jsonpath='{.status.loadBalancer.ingress[0].hostname}'", returnStdout: true).trim()
+            echo "Frontend Service is available at: http://${externalIP}:3000"
+          }
+        }
+      }
+    }
   }
 
   post {
