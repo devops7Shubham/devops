@@ -18,7 +18,7 @@ spec:
       - name: frontend
         image: shubhamdevops/frontend-app:latest
         env:
-        - name: REACT_APP_BACKEND_URL
+        - name: REACT_APP_SERVER_URL
           value: http://backend-svc:8080
         ports:
         - containerPort: 3000
