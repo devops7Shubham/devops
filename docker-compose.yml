@@ -1,0 +1,59 @@
+version: '3.8'
+
+services:
+  backend:
+    build:
+      context: ./backend
+    ports:
+      - "8080:8080"
+    env_file:
+      - ./backend/.env
+    depends_on:
+      postgres:
+        condition: service_healthy
+    security_opt:  # Disable AppArmor for this service
+      - apparmor=unconfined
+      - seccomp=unconfined
+    networks:
+      - app-network
+    restart: unless-stopped  # Auto-restart policy
+
+  frontend:
+    build:
+      context: ./frontend
+    ports:
+      - "3000:3000"
+    environment:
+      - REACT_APP_BACKEND_URL=http://backend:8080
+    depends_on:
+      backend:
+        condition: service_started
+    networks:
+      - app-network
+    restart: unless-stopped
+
+  postgres:
+    image: postgres:13-alpine
+    environment:
+      POSTGRES_USER: admin
+      POSTGRES_PASSWORD: adminpass
+      POSTGRES_DB: employees
+    ports:
+      - "5432:5432"
+    networks:
+      - app-network
+    healthcheck:  # Added database healthcheck
+      test: ["CMD-SHELL", "pg_isready -U admin -d employees"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    volumes:
+      - postgres_data:/var/lib/postgresql/data  # Persistent storage
+    restart: unless-stopped
+
+networks:
+  app-network:
+    driver: bridge
+
+volumes:
+  postgres_data:  # PostgreSQL data persistence

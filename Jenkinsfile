@@ -1,45 +1,88 @@
-pipeline{
-    agent any
-    stages{
-        stage("Git Checkout"){
-            steps{
-                checkout scmGit(branches: [[name: '*/main']], 
-                extensions: [], 
-                userRemoteConfigs: [[url: 'https://github.com/devops7Shubham/devops.git']])
-            }
-        }
-        stage("Maven Build"){
-            steps{
-                sh 'mvn clean install'
-            }
-        }
-        stage("Docker build"){
-            steps{
-                sh 'docker buildx build -t shubhamdevops/java_hello_world .'
-            }
-        }
-        stage("Docker Push"){
-            steps{
-                withCredentials([usernamePassword(credentialsId: 'shubhamdevops', passwordVariable: 'docker_password', usernameVariable: 'docker_username')]){
-                    sh "docker login -u ${docker_username} -p ${docker_password}"
-                    sh 'docker push shubhamdevops/java_hello_world'
-                }
+pipeline {
+  agent any
 
-            }
-        }
-        stage("Kubernetes Configuration"){
-            steps{
-                withCredentials([[$class: 'AmazonWebServicesCredentialsBinding',credentialsId: 'aws_credentials',accessKeyVariable: 'AWS_ACCESS_KEY_ID',secretKeyVariable: 'AWS_SECRET_ACCESS_KEY']]) {
-                    sh "aws eks update-kubeconfig --region ap-south-1 --name example"
-                    }
-                }
-            }
-        stage("Kubernetes Deployment"){
-            steps{
-                withCredentials([[$class: 'AmazonWebServicesCredentialsBinding',credentialsId: 'aws_credentials',accessKeyVariable: 'AWS_ACCESS_KEY_ID',secretKeyVariable: 'AWS_SECRET_ACCESS_KEY']]) {
-                    sh "/usr/local/bin/kubectl apply -f Deployment.yaml --validate=false"
-                    }
-                }
-            }
+  environment {
+    DOCKERHUB_NAMESPACE = 'shubhamdevops'
+    BACKEND_IMAGE       = "${DOCKERHUB_NAMESPACE}/backend-app:latest"
+    FRONTEND_IMAGE      = "${DOCKERHUB_NAMESPACE}/frontend-app:latest"
+    EKS_CLUSTER_NAME    = 'simple-eks'           // your EKS cluster name
+    AWS_REGION          = 'us-east-1'
+  }
+
+  stages {
+    stage('Git Checkout') {
+      steps {
+        checkout scmGit(
+          branches: [[name: '*/demo']],
+          extensions: [],
+          userRemoteConfigs: [[
+            url: 'https://github.com/devops7Shubham/devops.git'
+          ]]
+        )
+      }
     }
+
+    stage('Build Docker Images') {
+      steps {
+        // Build backend
+        sh "docker buildx build --load -t ${BACKEND_IMAGE} ./backend"
+        // Build frontend
+        sh "docker buildx build --load -t ${FRONTEND_IMAGE} ./frontend"
+      }
+    }
+
+    stage('Push to Docker Hub') {
+      steps {
+        withCredentials([usernamePassword(
+          credentialsId: 'shubhamdevops',
+          usernameVariable: 'DOCKER_USER',
+          passwordVariable: 'DOCKER_PASS'
+        )]) {
+          sh '''
+            echo "$DOCKER_PASS" | docker login -u "$DOCKER_USER" --password-stdin
+            docker push ${BACKEND_IMAGE}
+            docker push ${FRONTEND_IMAGE}
+          '''
+        }
+      }
+    }
+
+    stage('Kubernetes Configuration') {
+      steps {
+        withCredentials([[$class: 'AmazonWebServicesCredentialsBinding',
+          credentialsId: 'aws_credentials',
+          accessKeyVariable: 'AWS_ACCESS_KEY_ID',
+          secretKeyVariable: 'AWS_SECRET_ACCESS_KEY'
+        ]]) {
+          sh """
+            aws eks update-kubeconfig \
+              --region ${AWS_REGION} \
+              --name ${EKS_CLUSTER_NAME}
+          """
+        }
+      }
+    }
+
+    stage('Kubernetes Deployment') {
+      steps {
+        withCredentials([[$class: 'AmazonWebServicesCredentialsBinding',
+          credentialsId: 'aws_credentials',
+          accessKeyVariable: 'AWS_ACCESS_KEY_ID',
+          secretKeyVariable: 'AWS_SECRET_ACCESS_KEY'
+        ]]) {
+          sh '''
+            kubectl apply -f k8s/backend-deployment.yaml --validate=false
+            kubectl apply -f k8s/frontend-deployment.yaml --validate=false
+            kubectl apply -f k8s/postgres-deployment.yaml --validate=false
+          '''
+        }
+      }
+    }
+  }
+
+  post {
+    always {
+      cleanWs()
+    }
+  }
 }
