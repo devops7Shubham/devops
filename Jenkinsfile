@@ -5,7 +5,7 @@ pipeline {
     DOCKERHUB_NAMESPACE = 'shubhamdevops'
     BACKEND_IMAGE       = "${DOCKERHUB_NAMESPACE}/backend-app:latest"
     FRONTEND_IMAGE      = "${DOCKERHUB_NAMESPACE}/frontend-app:latest"
-    EKS_CLUSTER_NAME    = 'simple-eks'           // your EKS cluster name
+    EKS_CLUSTER_NAME    = 'simple-eks'
     AWS_REGION          = 'us-east-1'
   }
 
@@ -24,9 +24,7 @@ pipeline {
 
     stage('Build Docker Images') {
       steps {
-        // Build backend
         sh "docker buildx build --load -t ${BACKEND_IMAGE} ./backend"
-        // Build frontend
         sh "docker buildx build --load -t ${FRONTEND_IMAGE} ./frontend"
       }
     }
@@ -63,19 +61,19 @@ pipeline {
       }
     }
 
+    stage('Verify EKS Nodes') {
+      steps {
+        sh "kubectl get nodes -o wide"
+      }
+    }
+
     stage('Kubernetes Deployment') {
       steps {
-        withCredentials([[$class: 'AmazonWebServicesCredentialsBinding',
-          credentialsId: 'aws_credentials',
-          accessKeyVariable: 'AWS_ACCESS_KEY_ID',
-          secretKeyVariable: 'AWS_SECRET_ACCESS_KEY'
-        ]]) {
-          sh '''
-            kubectl apply -f k8s/backend-deployment.yaml --validate=false
-            kubectl apply -f k8s/frontend-deployment.yaml --validate=false
-            kubectl apply -f k8s/postgres-deployment.yaml --validate=false
-          '''
-        }
+        sh '''
+          kubectl apply -f k8s/backend-deployment.yaml --validate=false
+          kubectl apply -f k8s/frontend-deployment.yaml --validate=false
+          kubectl apply -f k8s/postgres-deployment.yaml --validate=false
+        '''
       }
     }
   }
