@@ -10,6 +10,7 @@ pipeline {
   }
 
   stages {
+
     stage('Git Checkout') {
       steps {
         checkout scmGit(
@@ -45,7 +46,7 @@ pipeline {
       }
     }
 
-    stage('Kubernetes Configuration') {
+    stage('Configure kubectl for EKS') {
       steps {
         withCredentials([[
           $class: 'AmazonWebServicesCredentialsBinding',
@@ -64,95 +65,69 @@ pipeline {
 
     stage('Verify EKS Nodes') {
       steps {
-        withCredentials([[
-          $class: 'AmazonWebServicesCredentialsBinding',
-          credentialsId: 'aws_credentials',
-          accessKeyVariable: 'AWS_ACCESS_KEY_ID',
-          secretKeyVariable: 'AWS_SECRET_ACCESS_KEY'
-        ]]) {
-          sh "kubectl get nodes -o wide"
-        }
+        sh "kubectl get nodes -o wide"
       }
     }
 
     stage('Install NGINX Ingress Controller') {
       steps {
-        withCredentials([[
-          $class: 'AmazonWebServicesCredentialsBinding',
-          credentialsId: 'aws_credentials',
-          accessKeyVariable: 'AWS_ACCESS_KEY_ID',
-          secretKeyVariable: 'AWS_SECRET_ACCESS_KEY'
-        ]]) {
-          sh '''
-            helm repo add ingress-nginx https://kubernetes.github.io/ingress-nginx
-            helm repo update
-
-            helm upgrade --install ingress-nginx ingress-nginx/ingress-nginx \
-              --namespace ingress-nginx --create-namespace \
-              --set controller.service.type=LoadBalancer \
-              --set controller.ingressClassResource.name=nginx \
-              --set controller.ingressClassResource.controllerValue=k8s.io/ingress-nginx
-          '''
-        }
+        sh """
+          # Remove AWS LB webhook if it exists (to prevent blocking installs)
+          kubectl delete mutatingwebhookconfigurations aws-load-balancer-webhook 2>/dev/null || true
+          
+          # Uninstall AWS Load Balancer Controller if installed
+          helm uninstall aws-load-balancer-controller -n kube-system 2>/dev/null || true
+          
+          # Install NGINX Ingress Controller
+          helm upgrade --install ingress-nginx ingress-nginx/ingress-nginx \
+            --namespace ingress-nginx \
+            --create-namespace \
+            --set controller.service.type=LoadBalancer \
+            --set controller.ingressClassResource.name=nginx \
+            --set controller.ingressClassResource.controllerValue=k8s.io/ingress-nginx \
+            --atomic --wait
+        """
       }
     }
 
-    stage('Kubernetes Deployment') {
+    stage('Apply Kubernetes Manifests') {
       steps {
-        withCredentials([[
-          $class: 'AmazonWebServicesCredentialsBinding',
-          credentialsId: 'aws_credentials',
-          accessKeyVariable: 'AWS_ACCESS_KEY_ID',
-          secretKeyVariable: 'AWS_SECRET_ACCESS_KEY'
-        ]]) {
-          sh '''
-            kubectl apply -f k8s/postgres-deployment.yaml --validate=false
-            kubectl apply -f k8s/backend-deployment.yaml  --validate=false
-            kubectl apply -f k8s/frontend-deployment.yaml --validate=false
-            kubectl apply -f k8s/ingress.yaml             --validate=false
-          '''
-        }
+        sh '''
+          kubectl apply -f k8s/postgres-deployment.yaml --validate=false
+          kubectl apply -f k8s/backend-deployment.yaml  --validate=false
+          kubectl apply -f k8s/frontend-deployment.yaml --validate=false
+          kubectl apply -f k8s/ingress.yaml             --validate=false
+        '''
       }
     }
 
     stage('Wait for Ingress Ready') {
       steps {
-        withCredentials([[
-          $class: 'AmazonWebServicesCredentialsBinding',
-          credentialsId: 'aws_credentials',
-          accessKeyVariable: 'AWS_ACCESS_KEY_ID',
-          secretKeyVariable: 'AWS_SECRET_ACCESS_KEY'
-        ]]) {
-          sh '''
-            echo "Waiting for Ingress to be ready..."
-            kubectl wait --namespace ingress-nginx --for=condition=available --timeout=180s deployment/ingress-nginx-controller
-
-          '''
-        }
+        sh '''
+          echo "Waiting for Ingress controller to be ready..."
+          kubectl wait --namespace ingress-nginx \
+            --for=condition=available deployment/ingress-nginx-controller \
+            --timeout=180s
+        '''
       }
     }
 
     stage('Get Application URL') {
       steps {
-        withCredentials([[
-          $class: 'AmazonWebServicesCredentialsBinding',
-          credentialsId: 'aws_credentials',
-          accessKeyVariable: 'AWS_ACCESS_KEY_ID',
-          secretKeyVariable: 'AWS_SECRET_ACCESS_KEY'
-        ]]) {
-          script {
-            def host = sh(
-              script: "kubectl get ingress my-app-ingress -o jsonpath='{.status.loadBalancer.ingress[0].hostname}'",
+        script {
+          def host = sh(
+            script: "kubectl get ingress my-app-ingress -o jsonpath='{.status.loadBalancer.ingress[0].hostname}'",
+            returnStdout: true
+          ).trim()
+
+          if (!host) {
+            host = sh(
+              script: "kubectl get ingress my-app-ingress -o jsonpath='{.status.loadBalancer.ingress[0].ip}'",
               returnStdout: true
             ).trim()
-            if (!host) {
-              host = sh(
-                script: "kubectl get ingress my-app-ingress -o jsonpath='{.status.loadBalancer.ingress[0].ip}'",
-                returnStdout: true
-              ).trim()
-            }
-            echo "🎉 Your application is available at: http://${host}/"
           }
+
+          echo "🎉 Your application is available at: http://${host}/"
         }
       }
     }
@@ -160,7 +135,7 @@ pipeline {
 
   post {
     always {
-      cleanWs() // Clean workspace after build
+      cleanWs() // Clean up the workspace
     }
   }
 }
