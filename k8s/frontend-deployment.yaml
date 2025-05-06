@@ -1,36 +1,49 @@
+# frontend-deployment.yaml
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: frontend
+  name: react-frontend
   labels:
-    app: frontend
+    app: react-frontend
 spec:
   replicas: 2
   selector:
     matchLabels:
-      app: frontend
+      app: react-frontend
   template:
     metadata:
       labels:
-        app: frontend
+        app: react-frontend
     spec:
       containers:
-      - name: frontend
-        image: shubhamdevops/frontend-app:latest
-        env:
-        - name: REACT_APP_SERVER_URL
-          value: http://a82239a54554e4e1fbf42d4e100b2757-2005666866.us-east-1.elb.amazonaws.com:8080
-        ports:
-        - containerPort: 3000
+        - name: react-frontend
+          image: your-registry/react-frontend:latest
+          ports:
+            - containerPort: 80
+          env:
+            - name: REACT_APP_API_URL
+              value: "/api"
+          readinessProbe:
+            httpGet:
+              path: /
+              port: 80
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /
+              port: 80
+            initialDelaySeconds: 15
+            periodSeconds: 20
 ---
 apiVersion: v1
 kind: Service
 metadata:
-  name: frontend-svc
+  name: react-frontend-svc
 spec:
-  type: LoadBalancer
   selector:
-    app: frontend
+    app: react-frontend
   ports:
-    - port: 80           # external HTTP port
-      targetPort: 3000   # your React app port
+    - port: 80
+      targetPort: 80
+  type: ClusterIP
