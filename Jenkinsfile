@@ -10,7 +10,7 @@ pipeline {
   }
 
   stages {
-    // ... [Keep all previous stages unchanged until 'Install AWS Load Balancer Controller']
+    // ... [Keep all previous stages until 'Install AWS Load Balancer Controller']
 
     stage('Install AWS Load Balancer Controller') {
       steps {
@@ -21,17 +21,16 @@ pipeline {
           secretKeyVariable: 'AWS_SECRET_ACCESS_KEY'
         ]]) {
           sh """
-            # Clean up any previous installation
+            # Force cleanup of previous installations
             helm uninstall aws-load-balancer-controller -n kube-system 2>/dev/null || true
             
-            # Install/Upgrade controller
-            helm repo add eks https://aws.github.io/eks-charts
-            helm repo update
+            # Install with wait and timeout
             helm upgrade --install aws-load-balancer-controller eks/aws-load-balancer-controller \
               -n kube-system \
               --set clusterName=${EKS_CLUSTER_NAME} \
               --set serviceAccount.create=false \
-              --set serviceAccount.name=aws-load-balancer-controller
+              --set serviceAccount.name=aws-load-balancer-controller \
+              --wait --timeout 5m
           """
         }
       }
@@ -46,17 +45,36 @@ pipeline {
           secretKeyVariable: 'AWS_SECRET_ACCESS_KEY'
         ]]) {
           sh """
-            # Add path prefix if manifests are in k8s/ directory
+            # Apply core components first
             kubectl apply -f postgres-deployment.yaml
             kubectl apply -f backend-deployment.yaml
             kubectl apply -f frontend-deployment.yaml
-            kubectl apply -f alb-ingress.yaml
+
+            # Retry ingress creation with delay
+            for i in {1..3}; do
+              kubectl apply -f alb-ingress.yaml && break
+              sleep 15
+            done
           """
         }
       }
     }
 
-    // ... [Keep remaining stages unchanged]
+    stage('Verify ALB Provisioning') {
+      steps {
+        withCredentials([[
+          $class: 'AmazonWebServicesCredentialsBinding',
+          credentialsId: 'aws_credentials',
+          accessKeyVariable: 'AWS_ACCESS_KEY_ID',
+          secretKeyVariable: 'AWS_SECRET_ACCESS_KEY'
+        ]]) {
+          sh """
+            # Wait max 3 minutes for ALB
+            timeout 180 bash -c 'while [[ -z $(kubectl get ingress app-ingress -o jsonpath="{.status.loadBalancer.ingress[0].hostname}" 2>/dev/null) ]]; do sleep 10; done'
+          """
+        }
+      }
+    }
   }
 
   post {
@@ -68,12 +86,11 @@ pipeline {
           secretKeyVariable: 'AWS_SECRET_ACCESS_KEY'
       ]]) {
         script {
-          // Gracefully handle missing ingress
           def ALB_HOST = sh(
-            script: "kubectl get ingress app-ingress -o jsonpath='{.status.loadBalancer.ingress[0].hostname}' || echo 'not-available'",
+            script: "kubectl get ingress app-ingress -o jsonpath='{.status.loadBalancer.ingress[0].hostname}' 2>/dev/null || echo 'alb-not-created'",
             returnStdout: true
           ).trim()
-          echo "🚀 Application URL: http://${ALB_HOST}"
+          echo "Application Status: ${ALB_HOST}"
           cleanWs()
         }
       }
