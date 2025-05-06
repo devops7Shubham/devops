@@ -4,12 +4,18 @@ metadata:
   name: my-app-ingress
   namespace: default
   annotations:
-    kubernetes.io/ingress.class: nginx              # or "alb" if using AWS ALB
-    nginx.ingress.kubernetes.io/rewrite-target: /$1  # for NGINX: strip the prefix
+    # Enable regex matching in paths
+    nginx.ingress.kubernetes.io/use-regex: "true"
+    # Strip the matched prefix (first capture group) before proxying
+    nginx.ingress.kubernetes.io/rewrite-target: /$1
 spec:
+  # Tell the cluster which IngressClass to use
+  ingressClassName: nginx
+
   rules:
     - http:
         paths:
+          # All /api/... → backend-svc:8080, with /api/ removed
           - path: /api/(.*)
             pathType: ImplementationSpecific
             backend:
@@ -18,6 +24,7 @@ spec:
                 port:
                   number: 8080
 
+          # Everything else → react-frontend-svc:80, serving at root
           - path: /(.*)
             pathType: ImplementationSpecific
             backend:
