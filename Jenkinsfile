@@ -10,9 +10,42 @@ pipeline {
   }
 
   stages {
-    // … other stages …
+    stage('Git Checkout') {
+      steps {
+        checkout scmGit(
+          branches: [[name: '*/demo']],
+          extensions: [],
+          userRemoteConfigs: [[
+            url: 'https://github.com/devops7Shubham/devops.git'
+          ]]
+        )
+      }
+    }
 
-    stage('Install AWS Load Balancer Controller') {
+    stage('Build Docker Images') {
+      steps {
+        sh "docker buildx build --load -t ${BACKEND_IMAGE} ./backend"
+        sh "docker buildx build --load -t ${FRONTEND_IMAGE} ./frontend"
+      }
+    }
+
+    stage('Push to Docker Hub') {
+      steps {
+        withCredentials([usernamePassword(
+          credentialsId: 'shubhamdevops',
+          usernameVariable: 'DOCKER_USER',
+          passwordVariable: 'DOCKER_PASS'
+        )]) {
+          sh '''
+            echo "$DOCKER_PASS" | docker login -u "$DOCKER_USER" --password-stdin
+            docker push ${BACKEND_IMAGE}
+            docker push ${FRONTEND_IMAGE}
+          '''
+        }
+      }
+    }
+
+    stage('Kubernetes Configuration') {
       steps {
         withCredentials([[
           $class: 'AmazonWebServicesCredentialsBinding',
@@ -20,24 +53,29 @@ pipeline {
           accessKeyVariable: 'AWS_ACCESS_KEY_ID',
           secretKeyVariable: 'AWS_SECRET_ACCESS_KEY'
         ]]) {
-          // Use '''…''' so $ and ${…} are not treated as Groovy interpolation
-          sh '''  
-            # Clean up previous installations
-            helm uninstall aws-load-balancer-controller -n kube-system 2>/dev/null || true
-            
-            # Install with proper clusterName interpolation
-            helm upgrade --install aws-load-balancer-controller eks/aws-load-balancer-controller \
-              -n kube-system \
-              --set clusterName=${EKS_CLUSTER_NAME} \
-              --set serviceAccount.create=false \
-              --set serviceAccount.name=aws-load-balancer-controller \
-              --wait --timeout 5m
-          '''
+          sh """
+            aws eks update-kubeconfig \
+              --region ${AWS_REGION} \
+              --name ${EKS_CLUSTER_NAME}
+          """
         }
       }
     }
 
-    stage('Deploy Application to EKS') {
+    stage('Verify EKS Nodes') {
+      steps {
+        withCredentials([[
+          $class: 'AmazonWebServicesCredentialsBinding',
+          credentialsId: 'aws_credentials',
+          accessKeyVariable: 'AWS_ACCESS_KEY_ID',
+          secretKeyVariable: 'AWS_SECRET_ACCESS_KEY'
+        ]]) {
+          sh "kubectl get nodes -o wide"
+        }
+      }
+    }
+
+    stage('Install NGINX Ingress Controller') {
       steps {
         withCredentials([[
           $class: 'AmazonWebServicesCredentialsBinding',
@@ -46,22 +84,20 @@ pipeline {
           secretKeyVariable: 'AWS_SECRET_ACCESS_KEY'
         ]]) {
           sh '''
-            # Apply manifests
-            kubectl apply -f postgres-deployment.yaml
-            kubectl apply -f backend-deployment.yaml
-            kubectl apply -f frontend-deployment.yaml
+            helm repo add ingress-nginx https://kubernetes.github.io/ingress-nginx
+            helm repo update
 
-            # Retry ingress creation
-            for i in {1..3}; do
-              kubectl apply -f alb-ingress.yaml && break
-              sleep 15
-            done
+            helm upgrade --install ingress-nginx ingress-nginx/ingress-nginx \
+              --namespace ingress-nginx --create-namespace \
+              --set controller.service.type=LoadBalancer \
+              --set controller.ingressClassResource.name=nginx \
+              --set controller.ingressClassResource.controllerValue=k8s.io/ingress-nginx
           '''
         }
       }
     }
 
-    stage('Verify ALB Provisioning') {
+    stage('Kubernetes Deployment') {
       steps {
         withCredentials([[
           $class: 'AmazonWebServicesCredentialsBinding',
@@ -70,14 +106,53 @@ pipeline {
           secretKeyVariable: 'AWS_SECRET_ACCESS_KEY'
         ]]) {
           sh '''
-            # Wait for ALB hostname to appear in the Ingress status
-            timeout 180 bash -c '
-              while [[ -z $(kubectl get ingress app-ingress \
-                  -o jsonpath="{.status.loadBalancer.ingress[0].hostname}") ]]; do
-                sleep 10
-              done
-            '
+            kubectl apply -f k8s/postgres-deployment.yaml --validate=false
+            kubectl apply -f k8s/backend-deployment.yaml  --validate=false
+            kubectl apply -f k8s/frontend-deployment.yaml --validate=false
+            kubectl apply -f k8s/ingress.yaml             --validate=false
           '''
+        }
+      }
+    }
+
+    stage('Wait for Ingress Ready') {
+      steps {
+        withCredentials([[
+          $class: 'AmazonWebServicesCredentialsBinding',
+          credentialsId: 'aws_credentials',
+          accessKeyVariable: 'AWS_ACCESS_KEY_ID',
+          secretKeyVariable: 'AWS_SECRET_ACCESS_KEY'
+        ]]) {
+          sh '''
+            echo "Waiting for Ingress to be ready..."
+            kubectl wait --namespace ingress-nginx --for=condition=available --timeout=180s deployment/ingress-nginx-controller
+
+          '''
+        }
+      }
+    }
+
+    stage('Get Application URL') {
+      steps {
+        withCredentials([[
+          $class: 'AmazonWebServicesCredentialsBinding',
+          credentialsId: 'aws_credentials',
+          accessKeyVariable: 'AWS_ACCESS_KEY_ID',
+          secretKeyVariable: 'AWS_SECRET_ACCESS_KEY'
+        ]]) {
+          script {
+            def host = sh(
+              script: "kubectl get ingress my-app-ingress -o jsonpath='{.status.loadBalancer.ingress[0].hostname}'",
+              returnStdout: true
+            ).trim()
+            if (!host) {
+              host = sh(
+                script: "kubectl get ingress my-app-ingress -o jsonpath='{.status.loadBalancer.ingress[0].ip}'",
+                returnStdout: true
+              ).trim()
+            }
+            echo "🎉 Your application is available at: http://${host}/"
+          }
         }
       }
     }
@@ -85,22 +160,7 @@ pipeline {
 
   post {
     always {
-      withCredentials([[
-        $class: 'AmazonWebServicesCredentialsBinding',
-        credentialsId: 'aws_credentials',
-        accessKeyVariable: 'AWS_ACCESS_KEY_ID',
-        secretKeyVariable: 'AWS_SECRET_ACCESS_KEY'
-      ]]) {
-        script {
-          // Use single‑quoted Groovy string for the kubectl invocation, escaping ${…}
-          def ALB_HOST = sh(
-            script: 'kubectl get ingress app-ingress -o jsonpath="{.status.loadBalancer.ingress[0].hostname}" 2>/dev/null || echo "alb-not-created"',
-            returnStdout: true
-          ).trim()
-          echo "Application Status: http://${ALB_HOST}"
-          cleanWs()
-        }
-      }
+      cleanWs() // Clean workspace after build
     }
   }
 }
