@@ -93,10 +93,10 @@ pipeline {
           secretKeyVariable: 'AWS_SECRET_ACCESS_KEY'
         ]]) {
           sh """
-            kubectl apply -f k8s/postgres-deployment.yaml
-            kubectl apply -f k8s/backend-deployment.yaml
-            kubectl apply -f k8s/frontend-deployment.yaml
-            kubectl apply -f k8s/alb-ingress.yaml
+            kubectl apply -f postgres-deployment.yaml
+            kubectl apply -f backend-deployment.yaml
+            kubectl apply -f frontend-deployment.yaml
+            kubectl apply -f alb-ingress.yaml
           """
         }
       }
