@@ -36,11 +36,12 @@ pipeline {
           usernameVariable: 'DOCKER_USER',
           passwordVariable: 'DOCKER_PASS'
         )]) {
-          sh '''
-            echo "$DOCKER_PASS" | docker login -u "$DOCKER_USER" --password-stdin
+          // Escape $ with backslash (\$) in double-quoted strings
+          sh """
+            echo "\$DOCKER_PASS" | docker login -u "\$DOCKER_USER" --password-stdin
             docker push ${BACKEND_IMAGE}
             docker push ${FRONTEND_IMAGE}
-          '''
+          """
         }
       }
     }
@@ -92,26 +93,10 @@ pipeline {
           secretKeyVariable: 'AWS_SECRET_ACCESS_KEY'
         ]]) {
           sh """
-            kubectl apply -f postgres-deployment.yaml
-            kubectl apply -f backend-deployment.yaml
-            kubectl apply -f frontend-deployment.yaml
-            kubectl apply -f alb-ingress.yaml
-          """
-        }
-      }
-    }
-
-    stage('Verify Deployment') {
-      steps {
-        withCredentials([[
-          $class: 'AmazonWebServicesCredentialsBinding',
-          credentialsId: 'aws_credentials',
-          accessKeyVariable: 'AWS_ACCESS_KEY_ID',
-          secretKeyVariable: 'AWS_SECRET_ACCESS_KEY'
-        ]]) {
-          sh """
-            kubectl get pods -o wide
-            kubectl get svc
+            kubectl apply -f k8s/postgres-deployment.yaml
+            kubectl apply -f k8s/backend-deployment.yaml
+            kubectl apply -f k8s/frontend-deployment.yaml
+            kubectl apply -f k8s/alb-ingress.yaml
           """
         }
       }
@@ -125,9 +110,10 @@ pipeline {
           accessKeyVariable: 'AWS_ACCESS_KEY_ID',
           secretKeyVariable: 'AWS_SECRET_ACCESS_KEY'
         ]]) {
+          // Escape $ in the while loop condition
           sh """
             echo "Waiting for ALB to become available..."
-            timeout 180 bash -c 'while [[ -z $(kubectl get ingress app-ingress -o jsonpath="{.status.loadBalancer.ingress[0].hostname}") ]]; do sleep 10; done'
+            timeout 180 bash -c 'while [[ -z \$(kubectl get ingress app-ingress -o jsonpath="{.status.loadBalancer.ingress[0].hostname}") ]]; do sleep 10; done'
           """
         }
       }
@@ -144,6 +130,7 @@ pipeline {
       ]]) {
         script {
           def ALB_HOST = sh(
+            // Fix JSONPath syntax
             script: "kubectl get ingress app-ingress -o jsonpath='{.status.loadBalancer.ingress[0].hostname}'",
             returnStdout: true
           ).trim()
