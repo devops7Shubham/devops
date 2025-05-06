@@ -47,7 +47,8 @@ pipeline {
 
     stage('Kubernetes Configuration') {
       steps {
-        withCredentials([[$class: 'AmazonWebServicesCredentialsBinding',
+        withCredentials([[
+          $class: 'AmazonWebServicesCredentialsBinding',
           credentialsId: 'aws_credentials',
           accessKeyVariable: 'AWS_ACCESS_KEY_ID',
           secretKeyVariable: 'AWS_SECRET_ACCESS_KEY'
@@ -63,7 +64,8 @@ pipeline {
 
     stage('Verify EKS Nodes') {
       steps {
-        withCredentials([[$class: 'AmazonWebServicesCredentialsBinding',
+        withCredentials([[
+          $class: 'AmazonWebServicesCredentialsBinding',
           credentialsId: 'aws_credentials',
           accessKeyVariable: 'AWS_ACCESS_KEY_ID',
           secretKeyVariable: 'AWS_SECRET_ACCESS_KEY'
@@ -72,7 +74,8 @@ pipeline {
         }
       }
     }
- stage('Kubernetes Deployment') {
+
+    stage('Install NGINX Ingress Controller') {
       steps {
         withCredentials([[
           $class: 'AmazonWebServicesCredentialsBinding',
@@ -81,7 +84,28 @@ pipeline {
           secretKeyVariable: 'AWS_SECRET_ACCESS_KEY'
         ]]) {
           sh '''
-            export KUBECONFIG=$KUBECONFIG
+            helm repo add ingress-nginx https://kubernetes.github.io/ingress-nginx
+            helm repo update
+
+            helm upgrade --install ingress-nginx ingress-nginx/ingress-nginx \
+              --namespace ingress-nginx --create-namespace \
+              --set controller.service.type=LoadBalancer \
+              --set controller.ingressClassResource.name=nginx \
+              --set controller.ingressClassResource.controllerValue=k8s.io/ingress-nginx
+          '''
+        }
+      }
+    }
+
+    stage('Kubernetes Deployment') {
+      steps {
+        withCredentials([[
+          $class: 'AmazonWebServicesCredentialsBinding',
+          credentialsId: 'aws_credentials',
+          accessKeyVariable: 'AWS_ACCESS_KEY_ID',
+          secretKeyVariable: 'AWS_SECRET_ACCESS_KEY'
+        ]]) {
+          sh '''
             kubectl apply -f k8s/postgres-deployment.yaml --validate=false
             kubectl apply -f k8s/backend-deployment.yaml  --validate=false
             kubectl apply -f k8s/frontend-deployment.yaml --validate=false
@@ -100,10 +124,11 @@ pipeline {
           secretKeyVariable: 'AWS_SECRET_ACCESS_KEY'
         ]]) {
           sh '''
-            export KUBECONFIG=$KUBECONFIG
             echo "Waiting for Ingress to be ready..."
-            kubectl wait --for=jsonpath='{.status.loadBalancer.ingress[0]}' \
-              ingress/my-app-ingress --timeout=180s
+            kubectl wait --namespace default \
+              --for=condition=available \
+              --timeout=180s \
+              deployment/ingress-nginx-controller
           '''
         }
       }
@@ -137,7 +162,7 @@ pipeline {
 
   post {
     always {
-      cleanWs()   // ensure workspace is clean for next run
+      cleanWs() // Clean workspace after build
     }
   }
 }
