@@ -10,58 +10,7 @@ pipeline {
   }
 
   stages {
-    stage('Git Checkout') {
-      steps {
-        checkout scmGit(
-          branches: [[name: '*/demo']],
-          extensions: [],
-          userRemoteConfigs: [[
-            url: 'https://github.com/devops7Shubham/devops.git'
-          ]]
-        )
-      }
-    }
-
-    stage('Build Docker Images') {
-      steps {
-        sh "docker buildx build --load -t ${BACKEND_IMAGE} ./backend"
-        sh "docker buildx build --load -t ${FRONTEND_IMAGE} ./frontend"
-      }
-    }
-
-    stage('Push to Docker Hub') {
-      steps {
-        withCredentials([usernamePassword(
-          credentialsId: 'shubhamdevops',
-          usernameVariable: 'DOCKER_USER',
-          passwordVariable: 'DOCKER_PASS'
-        )]) {
-          // Escape $ with backslash (\$) in double-quoted strings
-          sh """
-            echo "\$DOCKER_PASS" | docker login -u "\$DOCKER_USER" --password-stdin
-            docker push ${BACKEND_IMAGE}
-            docker push ${FRONTEND_IMAGE}
-          """
-        }
-      }
-    }
-
-    stage('Configure AWS/EKS Access') {
-      steps {
-        withCredentials([[
-          $class: 'AmazonWebServicesCredentialsBinding',
-          credentialsId: 'aws_credentials',
-          accessKeyVariable: 'AWS_ACCESS_KEY_ID',
-          secretKeyVariable: 'AWS_SECRET_ACCESS_KEY'
-        ]]) {
-          sh """
-            aws eks update-kubeconfig \
-              --region ${AWS_REGION} \
-              --name ${EKS_CLUSTER_NAME}
-          """
-        }
-      }
-    }
+    // ... [Keep all previous stages unchanged until 'Install AWS Load Balancer Controller']
 
     stage('Install AWS Load Balancer Controller') {
       steps {
@@ -72,9 +21,13 @@ pipeline {
           secretKeyVariable: 'AWS_SECRET_ACCESS_KEY'
         ]]) {
           sh """
+            # Clean up any previous installation
+            helm uninstall aws-load-balancer-controller -n kube-system 2>/dev/null || true
+            
+            # Install/Upgrade controller
             helm repo add eks https://aws.github.io/eks-charts
             helm repo update
-            helm install aws-load-balancer-controller eks/aws-load-balancer-controller \
+            helm upgrade --install aws-load-balancer-controller eks/aws-load-balancer-controller \
               -n kube-system \
               --set clusterName=${EKS_CLUSTER_NAME} \
               --set serviceAccount.create=false \
@@ -93,6 +46,7 @@ pipeline {
           secretKeyVariable: 'AWS_SECRET_ACCESS_KEY'
         ]]) {
           sh """
+            # Add path prefix if manifests are in k8s/ directory
             kubectl apply -f postgres-deployment.yaml
             kubectl apply -f backend-deployment.yaml
             kubectl apply -f frontend-deployment.yaml
@@ -102,22 +56,7 @@ pipeline {
       }
     }
 
-    stage('Wait for ALB Provisioning') {
-      steps {
-        withCredentials([[
-          $class: 'AmazonWebServicesCredentialsBinding',
-          credentialsId: 'aws_credentials',
-          accessKeyVariable: 'AWS_ACCESS_KEY_ID',
-          secretKeyVariable: 'AWS_SECRET_ACCESS_KEY'
-        ]]) {
-          // Escape $ in the while loop condition
-          sh """
-            echo "Waiting for ALB to become available..."
-            timeout 180 bash -c 'while [[ -z \$(kubectl get ingress app-ingress -o jsonpath="{.status.loadBalancer.ingress[0].hostname}") ]]; do sleep 10; done'
-          """
-        }
-      }
-    }
+    // ... [Keep remaining stages unchanged]
   }
 
   post {
@@ -129,9 +68,9 @@ pipeline {
           secretKeyVariable: 'AWS_SECRET_ACCESS_KEY'
       ]]) {
         script {
+          // Gracefully handle missing ingress
           def ALB_HOST = sh(
-            // Fix JSONPath syntax
-            script: "kubectl get ingress app-ingress -o jsonpath='{.status.loadBalancer.ingress[0].hostname}'",
+            script: "kubectl get ingress app-ingress -o jsonpath='{.status.loadBalancer.ingress[0].hostname}' || echo 'not-available'",
             returnStdout: true
           ).trim()
           echo "🚀 Application URL: http://${ALB_HOST}"
