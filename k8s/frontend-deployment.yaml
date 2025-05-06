@@ -17,7 +17,7 @@ spec:
     spec:
       containers:
         - name: react-frontend
-          image: your-registry/react-frontend:latest
+          image: shubhamgopchade/frontend-app:latest
           ports:
             - containerPort: 80
           env:
