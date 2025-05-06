@@ -125,10 +125,8 @@ pipeline {
         ]]) {
           sh '''
             echo "Waiting for Ingress to be ready..."
-            kubectl wait --namespace default \
-              --for=condition=available \
-              --timeout=180s \
-              deployment/ingress-nginx-controller
+            kubectl wait --namespace ingress-nginx --for=condition=available --timeout=180s deployment/ingress-nginx-controller
+
           '''
         }
       }
