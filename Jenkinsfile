@@ -170,12 +170,12 @@ pipeline {
         ]]) {
           script {
             def host = sh(
-              script: "kubectl get ingress my-app-ingress -o jsonpath='{.status.loadBalancer.ingress[0].hostname}'",
+              script: "kubectl get ingress app-ingress -o jsonpath='{.status.loadBalancer.ingress[0].hostname}'",
               returnStdout: true
             ).trim()
             if (!host) {
               host = sh(
-                script: "kubectl get ingress my-app-ingress -o jsonpath='{.status.loadBalancer.ingress[0].ip}'",
+                script: "kubectl get ingress app-ingress -o jsonpath='{.status.loadBalancer.ingress[0].ip}'",
                 returnStdout: true
               ).trim()
             }
