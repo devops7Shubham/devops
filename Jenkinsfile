@@ -72,48 +72,64 @@ pipeline {
         }
       }
     }
-
-  stage('Deploy to Kubernetes') {
+ stage('Kubernetes Deployment') {
       steps {
-        // Ensure kubectl is configured (Kubernetes CLI Plugin or installed on agent) :contentReference[oaicite:0]{index=0}
-        sh '''
-          export KUBECONFIG=$KUBECONFIG
-          kubectl apply -f k8s/postgres-deployment.yaml --validate=false
-          kubectl apply -f k8s/backend-deployment.yaml  --validate=false
-          kubectl apply -f k8s/frontend-deployment.yaml --validate=false
-          kubectl apply -f k8s/ingress.yaml             --validate=false
-        '''
+        withCredentials([[
+          $class: 'AmazonWebServicesCredentialsBinding',
+          credentialsId: 'aws_credentials',
+          accessKeyVariable: 'AWS_ACCESS_KEY_ID',
+          secretKeyVariable: 'AWS_SECRET_ACCESS_KEY'
+        ]]) {
+          sh '''
+            export KUBECONFIG=$KUBECONFIG
+            kubectl apply -f k8s/postgres-deployment.yaml --validate=false
+            kubectl apply -f k8s/backend-deployment.yaml  --validate=false
+            kubectl apply -f k8s/frontend-deployment.yaml --validate=false
+            kubectl apply -f k8s/ingress.yaml             --validate=false
+          '''
+        }
       }
     }
 
     stage('Wait for Ingress Ready') {
       steps {
-        // Wait until the Ingress controller has assigned an external address :contentReference[oaicite:1]{index=1}
-        sh '''
-          export KUBECONFIG=$KUBECONFIG
-          echo "Waiting for Ingress to be ready..."
-          kubectl wait --for=jsonpath='{.status.loadBalancer.ingress[0]}' \
-            ingress/my-app-ingress --timeout=180s
-        '''
+        withCredentials([[
+          $class: 'AmazonWebServicesCredentialsBinding',
+          credentialsId: 'aws_credentials',
+          accessKeyVariable: 'AWS_ACCESS_KEY_ID',
+          secretKeyVariable: 'AWS_SECRET_ACCESS_KEY'
+        ]]) {
+          sh '''
+            export KUBECONFIG=$KUBECONFIG
+            echo "Waiting for Ingress to be ready..."
+            kubectl wait --for=jsonpath='{.status.loadBalancer.ingress[0]}' \
+              ingress/my-app-ingress --timeout=180s
+          '''
+        }
       }
     }
 
     stage('Get Application URL') {
       steps {
-        script {
-          // Fetch the hostname or IP from the Ingress status :contentReference[oaicite:2]{index=2}
-          def host = sh(
-            script: "kubectl get ingress my-app-ingress -o jsonpath='{.status.loadBalancer.ingress[0].hostname}'",
-            returnStdout: true
-          ).trim()
-          if (!host) {
-            // Fallback to IP if hostname is empty
-            host = sh(
-              script: "kubectl get ingress my-app-ingress -o jsonpath='{.status.loadBalancer.ingress[0].ip}'",
+        withCredentials([[
+          $class: 'AmazonWebServicesCredentialsBinding',
+          credentialsId: 'aws_credentials',
+          accessKeyVariable: 'AWS_ACCESS_KEY_ID',
+          secretKeyVariable: 'AWS_SECRET_ACCESS_KEY'
+        ]]) {
+          script {
+            def host = sh(
+              script: "kubectl get ingress my-app-ingress -o jsonpath='{.status.loadBalancer.ingress[0].hostname}'",
               returnStdout: true
             ).trim()
+            if (!host) {
+              host = sh(
+                script: "kubectl get ingress my-app-ingress -o jsonpath='{.status.loadBalancer.ingress[0].ip}'",
+                returnStdout: true
+              ).trim()
+            }
+            echo "🎉 Your application is available at: http://${host}/"
           }
-          echo "🎉 Your application is available at: http://${host}/"
         }
       }
     }
@@ -121,7 +137,7 @@ pipeline {
 
   post {
     always {
-      cleanWs()   // clean workspace after build :contentReference[oaicite:3]{index=3}
+      cleanWs()   // ensure workspace is clean for next run
     }
   }
 }
