@@ -26,16 +26,16 @@ spec:
               value: adminpass
             - name: POSTGRES_DB
               value: employees
-          # Simplified probes
+          
           readinessProbe:
             exec:
               command: ["pg_isready", "-U", "admin"]
-            initialDelaySeconds: 20  # Increased from 10
+            initialDelaySeconds: 20  
             periodSeconds: 10
           livenessProbe:
             exec:
               command: ["pg_isready", "-U", "admin"]
-            initialDelaySeconds: 40  # Increased from 30
+            initialDelaySeconds: 40  
             periodSeconds: 20
 
 ---
