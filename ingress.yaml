@@ -1,35 +1,4 @@
-# apiVersion: networking.k8s.io/v1
-# kind: Ingress
-# metadata:
-#   name: app-ingress
-#   annotations:
-#     # Rewrite only /api/* → strip the /api prefix
-#     nginx.ingress.kubernetes.io/rewrite-target: /$1
-#     nginx.ingress.kubernetes.io/use-regex: "true"
-# spec:
-#   ingressClassName: nginx
-#   rules:
-#     - http:
-#         paths:
-#           # 1) API calls: /api/<path> → backend-svc:8080/<path>
-#           - path: /api/(.*)
-#             pathType: ImplementationSpecific
-#             backend:
-#               service:
-#                 name: backend-svc
-#                 port:
-#                   number: 8080
 
-#           # 2) Everything else, including / and /static/... → react-frontend-svc:3000 unchanged
-#           - path: /(.*)
-#             pathType: ImplementationSpecific
-#             backend:
-#               service:
-#                 name: react-frontend-svc
-#                 port:
-#                   number: 3000
-# k8s/ingress.yaml
-# Updated Ingress (no path rewriting)
 apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
